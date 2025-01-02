@@ -4,8 +4,11 @@ After=multi-user.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /home/pi/drawing_app.py
 User=pi
+WorkingDirectory=/home/pi/rasp_hand_draw_memo
+Environment=VIRTUAL_ENV=/home/pi/rasp_hand_draw_memo/.venv
+Environment=PATH=/home/pi/rasp_hand_draw_memo/.venv/bin:${PATH}
+ExecStart=/home/pi/rasp_hand_draw_memo/.venv/bin/python /home/pi/drawing_app.py
 
 [Install]
 WantedBy=multi-user.target

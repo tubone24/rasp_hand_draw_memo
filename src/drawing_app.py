@@ -1,53 +1,182 @@
-import streamlit as st
-from streamlit_drawable_canvas import st_canvas
-from PIL import Image
-import io
-import requests
+from dash import Dash, html, dcc, Input, Output, State, callback_context
+import plotly.graph_objects as go
 import json
 import os
 from dotenv import load_dotenv
 from pathlib import Path
+import numpy as np
+import requests
+from PIL import Image
+import io
+import base64
+import plotly.io
 
-# ページの設定（余白を最小限に）
-st.set_page_config(
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
-
-# カスタムCSS
-st.markdown("""
-    <style>
-        .block-container {
-            padding: 0rem;
-        }
-        .stButton button {
-            width: 100%;
-            height: 50px;
-        }
-        section[data-testid="stSidebar"] {
-            width: 200px !important;
-        }
-        /* フッターを非表示 */
-        footer {
-            display: none;
-        }
-        /* ヘッダーを非表示 */
-        header {
-            display: none;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
-# .envファイルの読み込み
+# 環境変数の読み込み
 dotenv_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path)
 
 SLACK_TOKEN = os.getenv('SLACK_TOKEN')
 SLACK_CHANNEL = os.getenv('SLACK_CHANNEL')
 
-if not SLACK_TOKEN or not SLACK_CHANNEL:
-    st.error("Slack設定が見つかりません。.envファイルを確認してください。")
-    st.stop()
+# Dashアプリケーションの初期化
+app = Dash(__name__)
+
+# カスタムCSS
+app.index_string = '''
+<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+            }
+            .control-panel {
+                padding: 10px;
+                background-color: #f8f9fa;
+                border-bottom: 1px solid #ddd;
+                display: flex;
+                align-items: center;
+            }
+            .button {
+                margin: 5px;
+                padding: 10px 20px;
+                font-size: 16px;
+                background-color: #007bff;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+            }
+            .button:hover {
+                background-color: #0056b3;
+            }
+            .input-group {
+                margin: 0 10px;
+                display: flex;
+                align-items: center;
+            }
+            .input-label {
+                margin-right: 5px;
+                font-size: 14px;
+            }
+            .color-picker {
+                margin: 5px;
+                padding: 5px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+            }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>
+'''
+
+# レイアウトの定義
+app.layout = html.Div([
+    # コントロールパネル
+    html.Div([
+        html.Button('クリア', id='clear-button', className='button'),
+        html.Button('Slackに送信', id='send-button', className='button'),
+        html.Div([
+            html.Label('線の太さ:', className='input-label'),
+            dcc.Input(
+                id='stroke-width',
+                type='number',
+                value=3,
+                min=1,
+                max=25,
+                className='color-picker'
+            ),
+        ], className='input-group'),
+        html.Div([
+            html.Label('線の色:', className='input-label'),
+            dcc.Input(
+                id='stroke-color',
+                type='text',
+                value='#000000',
+                pattern='^#[A-Fa-f0-9]{6}$',
+                className='color-picker'
+            ),
+        ], className='input-group'),
+    ], className='control-panel'),
+
+    # 描画キャンバス
+    dcc.Graph(
+        id='canvas',
+        figure={
+            'data': [],
+            'layout': {
+                'width': 2000,
+                'height': 800,
+                'paper_bgcolor': 'white',
+                'plot_bgcolor': 'white',
+                'dragmode': 'drawopenpath',
+                'newshape': {
+                    'line': {
+                        'color': '#000000',
+                        'width': 3,
+                    },
+                    'fillcolor': '#000000',
+                    'opacity': 0.3
+                },
+                'xaxis': {
+                    'showgrid': False,
+                    'showticklabels': False,
+                    'zeroline': False,
+                    'range': [0, 2000]
+                },
+                'yaxis': {
+                    'showgrid': False,
+                    'showticklabels': False,
+                    'zeroline': False,
+                    'range': [0, 800],
+                    'scaleanchor': 'x'
+                },
+                'margin': {'l': 0, 'r': 0, 't': 0, 'b': 0},
+                'shapes': []
+            }
+        },
+        config={
+            'modeBarButtonsToAdd': [
+                'drawline',
+                'drawopenpath',
+                'drawclosedpath',
+                'drawcircle',
+                'drawrect',
+                'eraseshape'
+            ],
+            'modeBarButtonsToRemove': [
+                'zoom',
+                'pan',
+                'select',
+                'zoomIn',
+                'zoomOut',
+                'autoScale',
+                'resetScale'
+            ],
+            'displaylogo': False,
+            'responsive': True
+        }
+    ),
+
+    # 描画データの保存用
+    dcc.Store(id='drawing-data', data=[]),
+
+    # メッセージ表示エリア
+    html.Div(id='message-area')
+])
 
 def send_to_slack(img_byte_arr):
     try:
@@ -56,6 +185,7 @@ def send_to_slack(img_byte_arr):
             "Authorization": f"Bearer {SLACK_TOKEN}",
             "Content-Type": "application/x-www-form-urlencoded"
         }
+
         upload_url_response = requests.get(
             "https://slack.com/api/files.getUploadURLExternal",
             headers=headers,
@@ -96,53 +226,102 @@ def send_to_slack(img_byte_arr):
         return True
 
     except Exception as e:
-        st.error(f"エラーが発生しました: {str(e)}")
+        print(f"エラーが発生しました: {str(e)}")
         return False
 
-def main():
-    # サイドバーの設定
-    with st.sidebar:
-        stroke_width = st.slider("線の太さ", 1, 25, 3)
-        stroke_color = st.color_picker("線の色", "#000000")
-        bg_color = st.color_picker("背景色", "#ffffff")
+@app.callback(
+    [Output('canvas', 'figure'),
+     Output('drawing-data', 'data')],
+    [Input('canvas', 'relayoutData'),
+     Input('clear-button', 'n_clicks'),
+     Input('stroke-width', 'value'),
+     Input('stroke-color', 'value')],
+    [State('drawing-data', 'data'),
+     State('canvas', 'figure')],
+    prevent_initial_call=True
+)
+def update_figure(relayout_data, clear_clicks, stroke_width, stroke_color, drawing_data, current_figure):
+    ctx = callback_context
+    if not ctx.triggered:
+        return current_figure, drawing_data
 
-    # 画面サイズの取得
-    # デフォルトの余白を考慮して調整
-    canvas_width = 2000
-    canvas_height = 800
+    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
-    # キャンバス
-    canvas_result = st_canvas(
-        fill_color="rgba(255, 165, 0, 0.3)",
-        stroke_width=stroke_width,
-        stroke_color=stroke_color,
-        background_color=bg_color,
-        height=canvas_height,
-        width=canvas_width,
-        drawing_mode="freedraw",
-        key="canvas",
-    )
+    if triggered_id == 'clear-button':
+        figure = {
+            'data': [],
+            'layout': {
+                'width': 2000,
+                'height': 800,
+                'paper_bgcolor': 'white',
+                'plot_bgcolor': 'white',
+                'dragmode': 'drawopenpath',
+                'newshape': {
+                    'line': {
+                        'color': stroke_color,
+                        'width': stroke_width,
+                    },
+                    'fillcolor': stroke_color,
+                    'opacity': 0.3
+                },
+                'xaxis': {
+                    'showgrid': False,
+                    'showticklabels': False,
+                    'zeroline': False,
+                    'range': [0, 2000]
+                },
+                'yaxis': {
+                    'showgrid': False,
+                    'showticklabels': False,
+                    'zeroline': False,
+                    'range': [0, 800],
+                    'scaleanchor': 'x'
+                },
+                'margin': {'l': 0, 'r': 0, 't': 0, 'b': 0},
+                'shapes': []
+            }
+        }
+        return figure, []
 
-    # ボタンを横並びに配置
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("クリア", key="clear"):
-            st.session_state.canvas_key = st.session_state.get('canvas_key', 0) + 1
-            st.experimental_rerun()
+    if triggered_id == 'canvas' and relayout_data:
+        if 'shapes' in relayout_data:
+            drawing_data = relayout_data['shapes']
+        elif any(key.startswith('shapes[') for key in relayout_data.keys()):
+            # 形状の更新
+            current_shapes = current_figure['layout'].get('shapes', [])
+            for key, value in relayout_data.items():
+                if key.startswith('shapes['):
+                    idx = int(key.split('[')[1].split(']')[0])
+                    prop = key.split('.')[-1]
+                    if idx >= len(current_shapes):
+                        current_shapes.append({})
+                    current_shapes[idx][prop] = value
+            drawing_data = current_shapes
 
-    with col2:
-        if st.button("Slackに送信", key="send"):
-            if canvas_result.image_data is not None:
-                img = Image.fromarray(canvas_result.image_data.astype('uint8'))
-                img_byte_arr = io.BytesIO()
-                img.save(img_byte_arr, format='PNG')
-                img_byte_arr = img_byte_arr.getvalue()
+    current_figure['layout']['shapes'] = drawing_data
+    current_figure['layout']['newshape']['line']['color'] = stroke_color
+    current_figure['layout']['newshape']['line']['width'] = stroke_width
+    current_figure['layout']['newshape']['fillcolor'] = stroke_color
 
-                with st.spinner('送信中...'):
-                    if send_to_slack(img_byte_arr):
-                        st.success("送信完了")
-            else:
-                st.warning("描画データがありません")
+    return current_figure, drawing_data
 
-if __name__ == "__main__":
-    main()
+@app.callback(
+    [Output('message-area', 'children'),
+     Output('send-button', 'disabled')],
+    Input('send-button', 'n_clicks'),
+    State('canvas', 'figure'),
+    prevent_initial_call=True
+)
+def send_to_slack_callback(n_clicks, figure):
+    if n_clicks is None:
+        return ''
+
+    img_bytes = plotly.io.to_image(figure, format='png')
+
+    if send_to_slack(img_bytes):
+        return html.Div('送信完了', style={'color': 'green'}), False
+    else:
+        return html.Div('送信失敗', style={'color': 'red'}), False
+
+if __name__ == '__main__':
+    app.run_server(debug=True, host='0.0.0.0', port=8050)

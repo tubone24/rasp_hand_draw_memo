@@ -1,0 +1,11 @@
+[Unit]
+Description=Drawing App
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/pi/drawing_app.py
+User=pi
+
+[Install]
+WantedBy=multi-user.target

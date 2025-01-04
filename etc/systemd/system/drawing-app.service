@@ -7,8 +7,12 @@ Type=simple
 User=pi
 WorkingDirectory=/home/pi/rasp_hand_draw_memo
 Environment=VIRTUAL_ENV=/home/pi/rasp_hand_draw_memo/.venv
-Environment=PATH=/home/pi/rasp_hand_draw_memo/.venv/bin:${PATH}
-ExecStart=/home/pi/rasp_hand_draw_memo/.venv/bin/python /home/pi/drawing_app.py
+Environment=PATH=/home/pi/rasp_hand_draw_memo/.venv/bin:/home/pi/rasp_hand_draw_memo/.venv/lib/python3.11/site-packages/kaleido/executable:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH}
+Environment="PYTHONPATH=/home/pi/rasp_hand_draw_memo/.venv/lib/python3.11/site-packages"
+ExecStart=/home/pi/rasp_hand_draw_memo/.venv/bin/python /home/pi/rasp_hand_draw_memo/src/drawing_app.py
+StandardOutput=append:/home/pi/rasp_hand_draw_memo/log/drawing_app.log
+StandardError=append:/home/pi/rasp_hand_draw_memo/log/drawing_app.error.log
+
 
 [Install]
 WantedBy=multi-user.target

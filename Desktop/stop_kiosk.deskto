@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Encoding=UTF-8
-Name=Stop Drawing App
-Comment=キオスクモードを終了
-Icon=/usr/share/pixmaps/python3.xpm
-Exec=/bin/sh /home/pi/rasp_hand_draw_memo/stop_kiosk.sh
-Terminal=false
-Categories=Utility;

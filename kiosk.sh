@@ -8,7 +8,6 @@ sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' ~/.config/chromium/Defaul
 
 /usr/bin/chromium-browser \
   --noerrdialogs \
-  --disable-infobars \
   --kiosk \
   --start-maximized \
   --start-fullscreen \

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Encoding=UTF-8
+Name=Drawing App
+Comment=メモ
+Icon=/usr/share/pixmaps/python3.xpm
+Exec=/bin/sh /home/pi/rasp_hand_draw_memo/kiosk.sh
+Terminal=false
+Categories=Utility;
